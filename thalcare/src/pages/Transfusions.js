@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../lib/supabase'
+import { localDateStr } from '../lib/dates'
 
-const today = new Date().toISOString().split('T')[0]
+const today = localDateStr()
 
 export default function Transfusions() {
   const { user } = useAuth()
   const [txs, setTxs] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ date: today, pints: 2, hb: '', notes: '' })
+  const [form, setForm] = useState({ date: today, pints: 2, hb: '', notes: '', nextDue: '' })
   const [error, setError] = useState('')
 
   async function loadTxs() {
-    const { data } = await supabase.from('transfusions').select('*')
+    const { data, error: err } = await supabase.from('transfusions').select('*')
       .eq('user_id', user.id).order('date', { ascending: false })
+    if (err) setError('Could not load transfusions. Check your connection and refresh.')
     setTxs(data || [])
     setLoading(false)
   }
@@ -31,16 +33,19 @@ export default function Transfusions() {
       pints: parseInt(form.pints),
       hb_level: form.hb ? parseFloat(form.hb) : null,
       notes: form.notes || null,
+      next_due_date: form.nextDue || null,
     })
     setSaving(false)
     if (err) { setError(err.message); return }
-    setForm({ date: today, pints: 2, hb: '', notes: '' })
+    setForm({ date: today, pints: 2, hb: '', notes: '', nextDue: '' })
     loadTxs()
   }
 
   async function deleteTx(id) {
     if (!window.confirm('Remove this transfusion record?')) return
-    await supabase.from('transfusions').delete().eq('id', id)
+    const { error: err } = await supabase.from('transfusions').delete().eq('id', id)
+    if (err) { setError('Could not remove that record. Please try again.'); return }
+    setError('')
     setTxs(prev => prev.filter(t => t.id !== id))
   }
 
@@ -67,6 +72,11 @@ export default function Transfusions() {
             <label>Pre-transfusion Hb level (g/dL) — optional</label>
             <input type="number" value={form.hb} step="0.1" placeholder="e.g. 7.2"
               onChange={e => setForm(f => ({ ...f, hb: e.target.value }))} />
+          </div>
+          <div className="form-row">
+            <label>Next transfusion due — optional</label>
+            <input type="date" value={form.nextDue} min={form.date}
+              onChange={e => setForm(f => ({ ...f, nextDue: e.target.value }))} />
           </div>
           <div className="form-row">
             <label>Notes — optional</label>
@@ -96,6 +106,7 @@ export default function Transfusions() {
                 <div style={{ color: 'var(--text3)', fontSize: 11 }}>
                   {tx.pints} pint{tx.pints > 1 ? 's' : ''}
                   {tx.hb_level ? ` · Pre-Hb: ${tx.hb_level} g/dL` : ''}
+                  {tx.next_due_date ? ` · Next due: ${tx.next_due_date}` : ''}
                   {tx.notes ? ` · ${tx.notes}` : ''}
                 </div>
               </div>
